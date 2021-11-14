@@ -11,7 +11,7 @@ declaring Q size and max number of entries
 					advance in time
 					implement counter for reading through
 				else	
-					(Q has elements)
+					(Q has elements
 						seq go on adding ekements to the Qfull
 						
 				//pushing elements
