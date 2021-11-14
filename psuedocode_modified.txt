@@ -1,0 +1,37 @@
+//assumed a tracefile exists
+
+declaring Q size and max number of entries
+
+	retain code for checckpoint1
+		(debugger mode and such)
+
+		always 
+				//for chceking the elements and adding them 
+				if(when the Q is empty && not EOF)
+					advance in time
+					implement counter for reading through
+				else	
+					(Q has elements)
+						seq go on adding ekements to the Qfull
+						
+				//pushing elements
+					for each clock cycle travel through the file
+					if (clock tick matches time of element && Q!=Full)
+						increment the counter	
+						increment size of Q
+					else if(clock tick matches time of element && Q==Full)
+						update age(servicing time)
+					else	
+						wait
+						
+				//evicting elements
+					for popping	the elements travel
+					if(element has been insdie for 100 clock ticks)
+							evict the element
+							decrement the size of the Q
+							
+						
+		
+						
+				
+			
