@@ -1,3 +1,4 @@
+//from first checckpoint
 //assumed a tracefile exists
 
 declaring Q size and max number of entries
