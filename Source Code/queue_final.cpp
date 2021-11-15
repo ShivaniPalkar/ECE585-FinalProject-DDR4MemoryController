@@ -14,7 +14,7 @@ int i=0;
 int debug_md;
 long int clk_tick;
 int file_cnt=0;
-int size=0;
+int size_q=0;
 string op;
 
 struct queue
@@ -94,7 +94,7 @@ void file_read ()
 
 void timeadvancing()
 {
-    if(!size && m_time[file_cnt] != 0)
+    if(!size_q && m_time[file_cnt] != 0)
     {
         clk_tick = m_time[file_cnt];
             if (debug_md == 1) 
@@ -109,7 +109,7 @@ void timeadvancing()
 void evict()
 {
     
-    for (int j=0; j <size; j++)
+    for (int j=0; j <size_q; j++)
   	{
 		if(clk_tick == 100 + q[j].age)
 		{
@@ -129,18 +129,18 @@ void evict()
       				op = "nop";
 			}
 		    
-			cout << left<< setw(20) << clk_tick << left << setw(20) << op;
-			std::cout << std::hex << left << setw(10) << q[j].address << std::dec << left << setw(10) << "Evict" << endl; 
-			for(int k=1; k <size; k++)
+			cout << left<< setw(20) << clk_tick << left << setw(21) << op;
+			std::cout << std::hex << left << setw(14) << q[j].address << std::dec << left << setw(10) << "Evict" << endl; 
+			for(int k=1; k <size_q; k++)
 			{
 				q[k-1].age = q[k].age;
 				q[k-1].type = q[k].type;
 				q[k-1].address = q[k].address;
-				q[size].age = 0;
-				q[size].type = 0;
-				q[size].address = 0;
+				q[size_q].age = 0;
+				q[size_q].type = 0;
+				q[size_q].address = 0;
             }
-            size--;
+            size_q--;
             j--;
 		}
 	}
@@ -151,13 +151,13 @@ void push()
 {
     for (int l = 0; l < i; l++)
 	{
-        if(clk_tick==m_time[l] && size != 16)
+        if(clk_tick==m_time[l] && size_q != 16)
         {
-            q[size].age= m_time[l];
-            q[size].address= add[l];
-            q[size].type= typ[l];
+            q[size_q].age= m_time[l];
+            q[size_q].address= add[l];
+            q[size_q].type= typ[l];
             
-            switch(q[size].type) 
+            switch(q[size_q].type) 
 		    {
    				case 0 :
       				op = "data read";
@@ -172,12 +172,12 @@ void push()
       				op = "nop";
 			}
             
-            cout << left<< setw(20) << clk_tick << left << setw(20) << op;
-			std::cout << std::hex << left << setw(10) << q[size].address << std::dec << left << setw(10) << "Push" << endl; 
-            size++;
+            cout << left<< setw(20) << clk_tick << left << setw(21) << op;
+			std::cout << std::hex << left << setw(14) << q[size_q].address << std::dec << left << setw(10) << "Push" << endl; 
+            size_q++;
             file_cnt++;
         }
-        else if(clk_tick == m_time[l] && size == 16)
+        else if(clk_tick == m_time[l] && size_q == 16)
 		{
 		    m_time[l] = q[0].age + 100;
 		}
@@ -187,14 +187,14 @@ void push()
 int main()
 {
 	file_read();
-    cout<<endl<< "Queue Output: " << endl << left<< setw(20)<< "CPU Cycle"<< left<< setw(20)<< "Type"<< left<< setw(10)<< "Address"<< left<< setw(5)<< "Push/Evict"<< endl;
+    cout<<endl<< "Queue Output: " << endl << left<< setw(20)<< "CPU Cycle"<< left<< setw(21)<< "Type"<< left<< setw(14)<< "Address"<< left<< setw(5)<< "Push/Evict"<< endl;
 	while(1)
     {
         timeadvancing();
         evict();
 	    push();
 	    clk_tick++;
-		if ((clk_tick >= (m_time[i - 1] + 100)) && (size == 0))
+		if ((clk_tick >= (m_time[i - 1] + 100)) && (size_q == 0))
 		    exit (0);
 	}
 	return 0;
