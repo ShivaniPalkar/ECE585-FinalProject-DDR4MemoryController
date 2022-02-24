@@ -1,9 +1,22 @@
+///////////////////////////////////////////////////////////////////////////////
+// DDR-4 DRAM Memory Controller 
+//
+// Memory Controller implementing open page policy without access scheduling.
+// Reads memory references from a file and stores them in a queue. After that
+// it services them one by one in order. All the DRAM commands issued by the 
+// memory controller are ouput to a text file. Once, a memory request is 
+// serviced completely it is evicted from the queue.
+//
+// Authors: Mehul Shah, Shivani Palkar, Ramaa Potnis, Ritvik Tiwari
+////////////////////////////////////////////////////////////////////////////////
+
 #include<iostream>
 #include<fstream>
 #include<iomanip>
 #define Q_SIZE 16
 #define MAX 999999
 
+// Timing Parameters in CPU cycles
 #define RC 152 //Row-cycle time
 #define RAS 104 // Row active time
 #define RRD_L 12// Row to row delay_long
@@ -24,8 +37,9 @@
 
 using namespace std;
 
-//declaring a global variable which can be later used to add with the counter
+//declaring global variables
 long int add;
+int first_flag = 1;
 int typ;
 long int m_time;
 long int byte_order;
@@ -37,13 +51,14 @@ long int row;
 
 int i=0;
 int debug_md;
-long int clk_tick;
+long long int clk_tick;
 int file_cnt=0;
-int size=0;
-long int evict_time=0;
+int size_q=0;
+
 int pd_req=0;
 string op;
 
+// Queue of struct type which maintains all the memory requests
 struct queue
 {
     long int age;	
@@ -52,6 +67,7 @@ struct queue
 };
 queue q[16];
 
+//Bank Status Register
 struct BSR
 {
 	bool bank_access;
@@ -59,8 +75,44 @@ struct BSR
     int cmd;
     int array_of_time_commands[4];
 };
-BSR status[4][4] = {0,0,0,{0,0,0,0}};
+BSR status[4][4] = {0,0,0,{1,0,0,0}};
 
+// Final DRAM Command Output
+void final_display(ofstream &outFile, int b, int bg, int r, int lc, int hc, int command)
+{   unsigned int c;
+    c = (hc << 3) | lc;
+    if (command == 0)
+    {
+        cout << left<< setw(10) << clk_tick << left << setw(10) << "PRE";
+        std::cout << std::hex << left << setw(8) << bg << left << setw(8) << b << std::dec << endl; 
+        outFile << clk_tick << "\t" << "PRE" << "\t" << std::hex << bg << "\t" << b << "\t" << std::dec;
+    }
+    
+    else if (command == 1)
+    {
+        cout << left<< setw(10) << clk_tick << left << setw(10) << "ACT";
+        std::cout << std::hex << left << setw(8) << bg << left << setw(8) << b << left << setw(10) << r << std::dec << endl; 
+        outFile << clk_tick << "\t" << "ACT" << "\t" << std::hex << bg << "\t" << b << "\t" << r << std::dec;
+    }
+    
+    else if (command == 2)
+    {
+        cout << left<< setw(10) << clk_tick << left << setw(10) << "RD";
+        std::cout << std::hex << left << setw(8) << bg << left << setw(8) << b << left << setw(10) << c << std::dec << endl; 
+        outFile << clk_tick << "\t" << "RD" << "\t" << std::hex << bg << "\t" << b << "\t" << c << std::dec;
+    }
+    
+    else if (command == 3)
+    {
+        cout << left<< setw(10) << clk_tick << left << setw(10) << "WR";
+        std::cout << std::hex << left << setw(8) << bg << left << setw(8) << b << left << setw(10) << c << std::dec << endl; 
+        outFile << clk_tick << "\t" << "WR" << "\t" << std::hex << bg << "\t" << b << "\t" << c << std::dec;
+    }
+
+    outFile << std::endl;
+}
+
+// Address breakdown to obtain bank, bank group etc.
 void add_bd(long int add_1)
 {
 	for (int n = 0; n < i; n++)
@@ -81,12 +133,11 @@ void add_bd(long int add_1)
 
 		row = add_1 & 0x1FFFC0000;
 		row = row >> 18;
-	
-		//std::cout << std::hex << left << setw(35) << byte_order << left << setw(35) << low_column << left << setw(35) << bank_gp << left << setw(35) << bank << left << setw(35) << high_column << left << setw(35) << row << std::dec << endl; 
 	}
 
 }
 
+// Evict function
 void evict()
 {	    
 		    switch(q[0].type) 
@@ -104,37 +155,34 @@ void evict()
       				op = "nop";
 			}
 		    
-			cout << left<< setw(20) << clk_tick << left << setw(20) << op;
-			std::cout << std::hex << left << setw(10) << q[0].address << std::dec << left << setw(10) << "Evict" << endl; 
-			for(int k=1; k <size; k++)
+			for(int k=1; k <size_q; k++)
 			{
 				q[k-1].age = q[k].age;
 				q[k-1].type = q[k].type;
 				q[k-1].address = q[k].address;
-				q[size].age = 0;
-				q[size].type = 0;
-				q[size].address = 0;
+				q[size_q].age = 0;
+				q[size_q].type = 0;
+				q[size_q].address = 0;
             }
-            size--;
-            evict_time = clk_tick;
+            size_q--;
 }
 
-
+// BSR Update Function
 void bank_register_update(int bg, int b, long int r, int command)
 {
-    //status[bank][bg].bank_access = 1;
-    //status[bg][b].row_open = r;
     status[bg][b].cmd = command;
 }
 
+// BSR Counters
 void bsr_counter_fn(int bg, int b, int command)
 {
-    if(status[bg][b].array_of_time_commands[command] != 38)
+    if(status[bg][b].array_of_time_commands[command] != RC)
     {
         status[bg][b].array_of_time_commands[command]++;
     }
 }
 
+// BSR Reset Counter
 void reset_bsr_counters(int bg, int b)
 {
     for(int u = 0; u < 4; u++)
@@ -144,20 +192,23 @@ void reset_bsr_counters(int bg, int b)
 }
 
 
-
-void gen()
+// DRAM command generator
+void gen(ofstream &outFile)
 {  
-    if(size != 0)
+    if(size_q != 0)
     {
         add_bd(q[0].address);
-
+        
+        // Bank has been accessed before. i.e some row is open 
         if (status[bank_gp][bank].bank_access == 1)
         {
-            if(status[bank_gp][bank].row_open == row && q[0].type == 1)
+            if((status[bank_gp][bank].row_open == row && q[0].type == 0) || (status[bank_gp][bank].row_open == row && q[0].type == 2) )
             {
                 bank_register_update(bank_gp,bank,row,2);
+                if(status[bank_gp][bank].array_of_time_commands[2] == 0)
+                    {final_display(outFile, bank, bank_gp, row, low_column, high_column, 2);}
                 
-                if(status[bank_gp][bank].array_of_time_commands[2] != (CAS + BURST - 1))
+                if(status[bank_gp][bank].array_of_time_commands[2] != (CAS + BURST))
                     bsr_counter_fn(bank_gp,bank,2);
                 else 
                 {
@@ -166,12 +217,13 @@ void gen()
                 }
             }
 
-            // write comand
-            else if(status[bank_gp][bank].row_open == row && q[0].type == 2)
+            else if((status[bank_gp][bank].row_open == row && q[0].type == 1))
             {
                 bank_register_update(bank_gp,bank,row,3);
+                if(status[bank_gp][bank].array_of_time_commands[3] == 0)
+                    {final_display(outFile, bank, bank_gp, row, low_column, high_column, 3);}
 
-                if(status[bank_gp][bank].array_of_time_commands[3] != (CAS + BURST - 1))
+                if(status[bank_gp][bank].array_of_time_commands[3] != (CWD + BURST))
                     bsr_counter_fn(bank_gp,bank,3);
                 else 
                 {
@@ -183,21 +235,27 @@ void gen()
             else if(status[bank_gp][bank].row_open != row)
             {
                 bank_register_update(bank_gp,bank,row,0);
-
-                if(status[bank_gp][bank].array_of_time_commands[0] != (RP - 1))
+                if(status[bank_gp][bank].array_of_time_commands[0] == 0)
+                    {final_display(outFile, bank, bank_gp, row, low_column, high_column, 0);}
+                
+                if(status[bank_gp][bank].array_of_time_commands[0] != (RP))
                     bsr_counter_fn(bank_gp,bank,0);
                 else 
                 {
                     bank_register_update(bank_gp,bank,row,1);
+                    if(status[bank_gp][bank].array_of_time_commands[1] == 0)
+                        {final_display(outFile, bank, bank_gp, row, low_column, high_column, 1);}
                     
                     if(status[bank_gp][bank].array_of_time_commands[1] != (RCD))
                         bsr_counter_fn(bank_gp,bank,1);
                     else 
                     {   
-                        if(q[0].type == 1)
+                        if(q[0].type == 0 || q[0].type == 2)
                         {
                             bank_register_update(bank_gp,bank,row,2);
-                
+                            if(status[bank_gp][bank].array_of_time_commands[2] == 0)
+                                {final_display(outFile, bank, bank_gp, row, low_column, high_column, 2);}
+                            
                             if(status[bank_gp][bank].array_of_time_commands[2] != (CAS + BURST))
                                 bsr_counter_fn(bank_gp,bank,2);
                             else 
@@ -208,11 +266,13 @@ void gen()
                             }
                         }
 
-                        else if(q[0].type == 2)
+                        else if(q[0].type == 1)
                         {
                             bank_register_update(bank_gp,bank,row,3);
-
-                            if(status[bank_gp][bank].array_of_time_commands[3] != (CAS + BURST))
+                            if(status[bank_gp][bank].array_of_time_commands[3] == 0)
+                                {final_display(outFile, bank, bank_gp, row, low_column, high_column, 3);}
+                            
+                            if(status[bank_gp][bank].array_of_time_commands[3] != (CWD + BURST))
                                 bsr_counter_fn(bank_gp,bank,3);
                             else 
                             {
@@ -228,21 +288,26 @@ void gen()
 
         }
 
+        // First access to the bank. bank is precharged
         else if(status[bank_gp][bank].bank_access == 0)
-        {   if(file_cnt == 1)
-                status[bank_gp][bank].array_of_time_commands[1] = 1;
-                
+        {
             bank_register_update(bank_gp,bank,row,1);
+            if(status[bank_gp][bank].array_of_time_commands[1] == 0)
+                {final_display(outFile, bank, bank_gp, row, low_column, high_column, 1);}
+                
             status[bank_gp][bank].row_open = row;
-            if(status[bank_gp][bank].array_of_time_commands[1] != (RCD - 1))
+            if(status[bank_gp][bank].array_of_time_commands[1] != (RCD))
             {
                 bsr_counter_fn(bank_gp,bank,1);
             }
             else
             {
-                if(q[0].type == 1)
+                if(q[0].type == 0 || q[0].type == 2)
                 {
                     bank_register_update(bank_gp,bank,row,2);
+                    if(status[bank_gp][bank].array_of_time_commands[2] == 0)
+                        {final_display(outFile, bank, bank_gp, row, low_column, high_column, 2);}
+                    
                     if(status[bank_gp][bank].array_of_time_commands[2] != (CAS + BURST))
                         bsr_counter_fn(bank_gp,bank,2);
                     else 
@@ -252,11 +317,13 @@ void gen()
                         status[bank_gp][bank].bank_access = 1;
                     }  
                 }
-                else if (q[0].type == 2)
+                else if (q[0].type == 1)
                 {    
                     bank_register_update(bank_gp,bank,row,3);
+                    if(status[bank_gp][bank].array_of_time_commands[3] == 0)
+                        {final_display(outFile, bank, bank_gp, row, low_column, high_column, 3);}
                     
-                    if(status[bank_gp][bank].array_of_time_commands[3] != (CAS + BURST))
+                    if(status[bank_gp][bank].array_of_time_commands[3] != (CWD + BURST))
                         bsr_counter_fn(bank_gp,bank,3);
                     else 
                     {
@@ -270,6 +337,7 @@ void gen()
     }   
 }
 
+// File Read Function
 void file_read (ifstream& inFile)
 {
 	//Variable Declarations
@@ -277,6 +345,7 @@ void file_read (ifstream& inFile)
 	string t;
             if (inFile.eof()){
                 inFile.close();
+                first_flag = 0;
             }    
 			inFile >> m_time >> typ >> std::hex >> add >> std::dec;
 			
@@ -301,9 +370,10 @@ void file_read (ifstream& inFile)
 				i++;
 }
 
+// Time advance
 void timeadvancing()
 {
-    if(!size && m_time != 0)
+    if(!size_q && m_time != 0)
     {
         clk_tick = m_time;
             if (debug_md == 1) 
@@ -314,18 +384,19 @@ void timeadvancing()
 		
 }
 
+//Push to the queue
 void push(ifstream& inFile)
 {       if (clk_tick==0)
         {file_read(inFile);}
         
-        if((clk_tick==m_time && size != 16) || (pd_req == 1 && size!=16 && inFile.is_open()))
+        if((clk_tick==m_time && size_q != 16) || (pd_req == 1 && size_q!=16 && inFile.is_open()))
         {
-            q[size].age= clk_tick;
+            q[size_q].age= clk_tick;
             m_time=clk_tick;
-            q[size].address= add;
-            q[size].type= typ;
+            q[size_q].address= add;
+            q[size_q].type= typ;
             
-            switch(q[size].type) 
+            switch(q[size_q].type) 
 		    {
    				case 0 :
       				op = "data read";
@@ -340,21 +411,20 @@ void push(ifstream& inFile)
       				op = "nop";
 			}
             
-            cout << left<< setw(20) << clk_tick << left << setw(20) << op;
-			std::cout << std::hex << left << setw(10) << q[size].address << std::dec << left << setw(10) << "Push" << endl; 
-            size++;
+            size_q++;
             file_cnt++;
             file_read(inFile);
             pd_req=0;
         }
-        else if(size == 16)
+        else if(size_q == 16)
 		{   pd_req = 1;
 		}
 }
 
+// Main Function
 int main()
 {   string file_nm;	
-
+    string out_nm;
 	//User input for filename and debug mode	
 	cout <<"Enter the name of the trace file: ";
 	cin >> file_nm;
@@ -362,8 +432,14 @@ int main()
 	cout <<"Do you want to debug (1/0): ";
 	cin >> debug_md;
 	
+    // Output File name
+	cout <<"Enter the name of the output file: ";
+	cin >> out_nm;
+	
 	//File read
 	ifstream inFile(file_nm);
+	ofstream outFile;
+    outFile.open(out_nm, std::ios::out);
 
 		//Check file availability
 	if(!inFile)
@@ -381,29 +457,16 @@ int main()
 	
 	while(1)
     {
-		
-		//Data Parse and output	
-	
-	
-	/*if (inFile.is_open()){
-		if (debug_md == 1) 
-		{
-		    cout << endl << "File Output: " << endl;
-		    cout<< left<< setw(20)<<"CPU Cycle"<< left<< setw(20)<< "Type"<< left<< setw(10)<< "Address"<< endl;
-		}
-        
-    }*/
-
-	//add_bd();
-    
-	
         timeadvancing();
         push(inFile);
-        gen();
+        gen(outFile);
 	    
 	    clk_tick++;
-		if ((clk_tick >= 44) && (size == 0))
+		if (first_flag == 0 && (size_q == 0)) {
+            outFile.close();
 		    exit (0);
-	}
+		}
+    }	
+    outFile.close();
 	return 0;
 }
